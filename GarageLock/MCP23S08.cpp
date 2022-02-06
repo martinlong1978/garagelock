@@ -195,7 +195,7 @@ uint8_t MCP23S08::digitalRead(uint8_t pin)
   }
   uint8_t PM = MCP23S08_DDR_A;
   readReg(PM);
-  delay(100);
+  delay(10);
   uint8_t IOR = MCP23S08_GPIO_A;
   uint8_t val = readReg(IOR);
   if (_error != MCP23S08_OK)
@@ -396,7 +396,7 @@ bool MCP23S08::writeReg(uint8_t reg, uint8_t value)
 {
   _error = MCP23S08_OK;
 
-    Serial.printf("Write %#04x to %d \n", value, reg);
+    //Serial.printf("Write %#04x to %d \n", value, reg);
 
 
   if (reg > MCP23S08_OLAT_A)

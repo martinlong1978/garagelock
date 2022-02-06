@@ -45,7 +45,7 @@ class SpiPin : public Pin {
 
 class RemoteLock {
     public:
-        RemoteLock(Pin *close, Pin *limit, Pin *actuator1, Pin *actuator2);
+        RemoteLock(Pin *close, Pin *limit, Pin *actuator1, Pin *actuator2, Pin *relay);
         void poll();
         void unlock();
         void trylock();
@@ -53,11 +53,12 @@ class RemoteLock {
     private:
         RemoteLock();
         int _state;
-        Pin  *_close, *_limit, *_act1, *_act2;
+        Pin  *_close, *_limit, *_act1, *_act2, *_relay;
         void _unlock();
         void _lock();
         void _stop();
         bool _limitState();
         bool _closeState();
+        int _action;
 };
 #endif

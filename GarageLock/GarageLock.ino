@@ -82,7 +82,8 @@ void remote_loop(void *parameters)
           new SpiPin(&mcp, 5, false),
           new SpiPin(&mcp, 4, false),
           new SpiPin(&mcp, 7, false),
-          new SpiPin(&mcp, 6, false))};
+          new SpiPin(&mcp, 6, false),
+          new SpiPin(&mcp, 3, false))};
 
   bool prevstate = 99;
   for (;;)
