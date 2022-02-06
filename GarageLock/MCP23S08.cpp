@@ -102,7 +102,7 @@ bool MCP23S08::begin()
   if (!writeReg(MCP23S08_IOCR, 0b00100000))
     return false; // TODO MAGIC NR
   // Force INPUT_PULLUP
-  if (!writeReg(MCP23S08_PUR_A, 0xFF))
+  if (!writeReg(MCP23S08_PUR_A, 0x00))
     return false;
   return true;
 }
@@ -193,6 +193,9 @@ uint8_t MCP23S08::digitalRead(uint8_t pin)
     _error = MCP23S08_PIN_ERROR;
     return MCP23S08_INVALID_READ;
   }
+  uint8_t PM = MCP23S08_DDR_A;
+  readReg(PM);
+  delay(100);
   uint8_t IOR = MCP23S08_GPIO_A;
   uint8_t val = readReg(IOR);
   if (_error != MCP23S08_OK)
@@ -393,6 +396,9 @@ bool MCP23S08::writeReg(uint8_t reg, uint8_t value)
 {
   _error = MCP23S08_OK;
 
+    Serial.printf("Write %#04x to %d \n", value, reg);
+
+
   if (reg > MCP23S08_OLAT_A)
   {
     _error = 0xFF; // TODO MAGIC NR
@@ -445,6 +451,7 @@ uint8_t MCP23S08::readReg(uint8_t reg)
     rv = swSPI_transfer(0xFF);
   }
   ::digitalWrite(_select, HIGH);
+  //Serial.printf("Read %#04x from %d \n", rv, reg);
   return rv;
 }
 

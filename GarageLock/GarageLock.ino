@@ -79,10 +79,10 @@ void remote_loop(void *parameters)
 
   RemoteLock locks[NO_LOCKS] = {
       RemoteLock(
-          new SpiPin(&mcp, 7, true),
-          new SpiPin(&mcp, 6, true),
           new SpiPin(&mcp, 5, false),
-          new SpiPin(&mcp, 4, false))};
+          new SpiPin(&mcp, 4, false),
+          new SpiPin(&mcp, 7, false),
+          new SpiPin(&mcp, 6, false))};
 
   bool prevstate = 99;
   for (;;)
