@@ -8,10 +8,15 @@
 // 2 - unlocking
 // 3 - awaiting open
 
-#define R_UNLOCKED 0
+#define R_LOCKING 0
 #define R_LOCKED 1
 #define R_UNLOCKING 2
 #define R_READYTOOPEN 3
+#define R_UNLOCKED 4
+
+#define A_STOP 1
+#define A_UNLOCKING 2
+#define A_LOCKING 3
 
 class Pin {
     public :
@@ -53,11 +58,12 @@ class RemoteLock {
     private:
         RemoteLock();
         int _state;
-        Pin  *_close, *_limit, *_act1, *_act2, *_relay;
+        Pin  *_close, *_unlocklimit, *_locklimit, *_act1, *_act2, *_relay1, *_relay2;
         void _unlock();
         void _lock();
         void _stop();
-        bool _limitState();
+        bool _lockedLimitState();
+        bool _unlockedLimitState();
         bool _closeState();
         int _action;
 };

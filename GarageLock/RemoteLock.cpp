@@ -48,13 +48,15 @@ bool SpiPin::read()
     return (val == HIGH) != _flip;
 }
 
-RemoteLock::RemoteLock(Pin *close, Pin *limit, Pin *actuator1, Pin *actuator2, Pin *relay)
+RemoteLock::RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuator1, Pin *actuator2, Pin *relay1, Pin *relay2)
 {
     _close = close;
-    _limit = limit;
+    _locklimit = locklimit;
+    _unlocklimit = unlocklimit;
     _act1 = actuator1;
     _act2 = actuator2;
-    _relay = relay;
+    _relay1 = relay1;
+    _relay2 = relay2;
     close->setDirection(INPUT);
     limit->setDirection(INPUT);
     actuator1->setDirection(OUTPUT);
@@ -64,40 +66,42 @@ RemoteLock::RemoteLock(Pin *close, Pin *limit, Pin *actuator1, Pin *actuator2, P
 
 void RemoteLock::poll()
 {
-    if (_state == R_UNLOCKED && _closeState() && _action != 3)
+    if (_state == R_UNLOCKED && _closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("// door closed, start locking");
         _lock();
+        _state = R_LOCKING;
     }
-    if (_state == R_UNLOCKED && !_closeState() && _action != 2)
+    if (_state == R_LOCKING && !_closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("// reopened before fully locked, wind the lock back");
-        _unlock();
+        _state = R_UNLOCKING;
     }
-    if (_state == R_UNLOCKED && _limitState() && _action != 1)
+    if (_state == R_LOCKING && _lockedLimitState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("// fully locked, stop and set us locked");
         _stop();
         _state = R_LOCKED;
     }
-    if (_state == R_UNLOCKING  && _action != 2)
+    if (_state == R_UNLOCKING  && _action != A_UNLOCKING)
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("// unlock requested, start unlock (these states prevent the close switch from relocking)");
         _unlock();
     }
-    if (_state == R_UNLOCKING && !_limitState())
+    if (_state == R_UNLOCKING && _unlockedLimitState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("// It's unlocking. Now... wait for the garage door to be opened.");
+        _stop();
         _state = R_READYTOOPEN;
     }
     if (_state == R_READYTOOPEN && !_closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _limitState());
+        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
         Serial.println("//....  Then a close will relock");
         _state = R_UNLOCKED;
     }
@@ -109,33 +113,41 @@ bool RemoteLock::_closeState()
     return _close->read();
 }
 
-bool RemoteLock::_limitState()
+bool RemoteLock::_lockedLimitState()
 {
     // Serial.printf("Limit state %i\n", _limit->read());
-    return _limit->read();
+    return _locklimit->read();
+}
+
+bool RemoteLock::_unlockedLimitState()
+{
+    // Serial.printf("Limit state %i\n", _limit->read());
+    return _unlocklimit->read();
 }
 
 void RemoteLock::_stop()
 {
-    if(_action == 1)return;
-    _action = 1;
+    if(_action == A_STOP)return;
+    _action = A_STOP;
     Serial.println("Stopping");
     _act1->write(false);
     _act2->write(false);
     vTaskDelay(100 / portTICK_PERIOD_MS);
-    _relay->write(false);
+    _relay1->write(false);
+    _relay2->write(false);
     Serial.println("sent");
 }
 
 void RemoteLock::_unlock()
 {
-    if(_action == 2)return;
+    if(_action == A_UNLOCKING)return;
     _action = 2;
     Serial.println("UnLocking");
     _act1->write(false);
     _act2->write(false);
     vTaskDelay(100 / portTICK_PERIOD_MS);
-    _relay->write(false);
+    _relay1->write(false);
+    _relay2->write(true);
     vTaskDelay(100 / portTICK_PERIOD_MS);
     _act1->write(true);
     _act2->write(false);
@@ -144,13 +156,14 @@ void RemoteLock::_unlock()
 
 void RemoteLock::_lock()
 {
-    if(_action == 3)return;
-    _action = 3;
+    if(_action == A_LOCKING)return;
+    _action = A_LOCKING;
     Serial.println("Locking");
     _act1->write(false);
     _act2->write(false);
     vTaskDelay(100 / portTICK_PERIOD_MS);
-    _relay->write(true);
+    _relay1->write(true);
+    _relay2->write(false);
     vTaskDelay(100 / portTICK_PERIOD_MS);
     _act1->write(false);
     _act2->write(true);
