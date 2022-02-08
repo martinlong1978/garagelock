@@ -1,6 +1,5 @@
 #define USE_ESP_IDF_GPIO 1
 
-#include <MqttClient.h>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <SPI.h>
@@ -10,18 +9,28 @@
 #include "MCP23S08.h"
 #include "SECRETS.h"
 
-WiFiClient client;
-PubSubClient mqttClient(MQTT_HOST, 1883, client);
-
-QueueHandle_t queue;
-QueueHandle_t outQueue;
-
 #define NO_LOCKS 1
 #define SUBJECT "garagelock/feeds/onoff"
 #define STATUSSUBJECT "garagelock/feeds/onoff/state"
 
+WiFiClient client;
+PubSubClient mqttClient(MQTT_HOST, 1883, client);
+
+QueueHandle_t inQueue;
+QueueHandle_t outQueue;
+QueueHandle_t cmdQueue;
+
 SPIClass spi(HSPI);
 MCP23S08 mcp(&spi, 16, 0);
+
+RemoteLock locks[NO_LOCKS] = {
+    RemoteLock(new SpiPin(&mcp, 5, false),
+               new SpiPin(&mcp, 6, false),
+               new SpiPin(&mcp, 7, false),
+               new SpiPin(&mcp, 3, false),
+               new SpiPin(&mcp, 2, false),
+               new SpiPin(&mcp, 0, false),
+               new SpiPin(&mcp, 1, false))};
 
 // OTA Update task
 
@@ -31,6 +40,22 @@ void updater(void *parameters)
   {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     ArduinoOTA.handle();
+  }
+}
+
+// Console task
+
+void console(void *parameters)
+{
+  for (;;)
+  {
+    Serial.print("Toggle: (c) close switch (l)ock limit switch (u)nlock limit switch. MQTT unlock (m).\n");
+    char a[5];
+    while (Serial.read(&a[0], 5) <= 0)
+    {
+      vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
+    xQueueSend(cmdQueue, &a, portMAX_DELAY);
   }
 }
 
@@ -77,13 +102,11 @@ void remote_loop(void *parameters)
   // RemoteLock locks[NO_LOCKS] = {
   //     RemoteLock(new LocalPin(13, true), new LocalPin(16, true), new LocalPin(11, false), new LocalPin(12, false))};
 
-  RemoteLock locks[NO_LOCKS] = {
-      RemoteLock(
-          new SpiPin(&mcp, 5, false),
-          new SpiPin(&mcp, 4, false),
-          new SpiPin(&mcp, 7, false),
-          new SpiPin(&mcp, 6, false),
-          new SpiPin(&mcp, 3, false))};
+  for (int i = 0; i < NO_LOCKS; i++)
+  {
+    // Serial.println("Polling");
+    locks[i].init();
+  }
 
   bool prevstate = 99;
   for (;;)
@@ -94,13 +117,13 @@ void remote_loop(void *parameters)
       locks[i].poll();
     }
     // Serial.println("Checking msg Queue");
-    if (uxQueueMessagesWaiting(queue) > 0)
+    if (uxQueueMessagesWaiting(inQueue) > 0)
     {
       char msgc[10];
-      xQueueReceive(queue, &msgc, portMAX_DELAY);
+      xQueueReceive(inQueue, &msgc, portMAX_DELAY);
       String msg(msgc);
       Serial.printf("Has messages %s\n", msg);
-      xQueueReset(queue);
+      xQueueReset(inQueue);
       if (msg.equals("OFF"))
         for (int i = 0; i < NO_LOCKS; i++)
         {
@@ -129,6 +152,51 @@ void remote_loop(void *parameters)
       xQueueSend(outQueue, buff, portMAX_DELAY);
       prevstate = locked;
     }
+
+    checkDebugQueue();
+  }
+}
+
+void checkDebugQueue()
+{
+  int debuglock = 0;
+
+  if (uxQueueMessagesWaiting(cmdQueue) > 0)
+  {
+    char msgc[5];
+    xQueueReceive(cmdQueue, &msgc, portMAX_DELAY);
+    switch (msgc[0])
+    {
+    case 'c':
+      locks[debuglock].closePin()->toggle();
+      break;
+    case 'l':
+      locks[debuglock].lockLimitPin()->toggle();
+      break;
+    case 'u':
+      locks[debuglock].unlockLimitPin()->toggle();
+      break;
+    case 'm':
+      for (int i = 0; i < NO_LOCKS; i++)
+      {
+        locks[i].unlock();
+      }
+      break;
+    default:
+      break;
+    }
+    for (int i = 0; i < NO_LOCKS; i++)
+    {
+      // Serial.println("Polling");
+      locks[i].poll();
+    }
+    Serial.printf("Close Pin: %i\n", locks[debuglock].closePin()->read());
+    Serial.printf("LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
+    Serial.printf("UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
+    Serial.printf("Relay1 Pin: %i\n", locks[debuglock].relay1Pin()->getWrittenState());
+    Serial.printf("Relay2 Pin: %i\n", locks[debuglock].relay2Pin()->getWrittenState());
+    Serial.printf("Act1 Pin: %i\n", locks[debuglock].act1Pin()->getWrittenState());
+    Serial.printf("Act2 Pin: %i\n", locks[debuglock].act2Pin()->getWrittenState());
   }
 }
 
@@ -185,9 +253,9 @@ void onMqttMessage(const char topic[], byte *payload, unsigned int messageSize)
     Serial.printf("Message: %s\n", msg);
     if (msg.equals("OFF") || msg.equals("ON"))
     {
-      Serial.println("Placing message on queue");
-      xQueueSend(queue, &msg, portMAX_DELAY);
-      Serial.println("Placed message on queue");
+      Serial.println("Placing message on inQueue");
+      xQueueSend(inQueue, &msg, portMAX_DELAY);
+      Serial.println("Placed message on inQueue");
     }
   }
   Serial.println("Done processing message with topic ");
@@ -252,8 +320,9 @@ void setup()
   Serial.begin(115200);
   delay(10);
 
-  queue = xQueueCreate(10, sizeof(char) * 5);
+  inQueue = xQueueCreate(10, sizeof(char) * 5);
   outQueue = xQueueCreate(10, sizeof(char) * 5);
+  cmdQueue = xQueueCreate(10, sizeof(char) * 5);
 
   // We start by connecting to a WiFi network
   wifiConnect();
@@ -292,6 +361,14 @@ void setup()
   xTaskCreate(
       updater,
       "Updater",
+      2000,
+      NULL,
+      1,
+      NULL);
+
+  xTaskCreate(
+      console,
+      "Console",
       2000,
       NULL,
       1,

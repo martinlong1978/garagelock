@@ -1,6 +1,11 @@
 #include <Arduino.h>
 #include "RemoteLock.h"
 
+bool Pin::getWrittenState()
+{
+    return _written;
+}
+
 LocalPin::LocalPin(int pin, bool flip)
 {
     _pin = pin;
@@ -14,6 +19,7 @@ void LocalPin::setDirection(int direction)
 
 void LocalPin::write(bool value)
 {
+    _written = value;
     digitalWrite(_pin, value == _flip ? LOW : HIGH);
 };
 
@@ -22,6 +28,11 @@ bool LocalPin::read()
     int val = digitalRead(_pin);
     // Serial.printf("Reading pin %d value %d\n", _pin, val);
     return (val == HIGH) != _flip;
+}
+
+void LocalPin::toggle()
+{
+    _flip = !_flip;
 }
 
 SpiPin::SpiPin(MCP23S08 *spi, int pin, bool flip)
@@ -38,6 +49,7 @@ void SpiPin::setDirection(int direction)
 
 void SpiPin::write(bool value)
 {
+    _written = value;
     _spi->digitalWrite(_pin, value == _flip ? LOW : HIGH);
 };
 
@@ -46,6 +58,11 @@ bool SpiPin::read()
     int val = _spi->digitalRead(_pin);
     // Serial.printf("Reading pin %d value %d\n", _pin, val);
     return (val == HIGH) != _flip;
+}
+
+void SpiPin::toggle()
+{
+    _flip = !_flip;
 }
 
 RemoteLock::RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuator1, Pin *actuator2, Pin *relay1, Pin *relay2)
@@ -57,55 +74,97 @@ RemoteLock::RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuat
     _act2 = actuator2;
     _relay1 = relay1;
     _relay2 = relay2;
-    close->setDirection(INPUT);
-    limit->setDirection(INPUT);
-    actuator1->setDirection(OUTPUT);
-    actuator2->setDirection(OUTPUT);
-    relay->setDirection(OUTPUT);
+}
+
+void RemoteLock::init()
+{
+    _close->setDirection(INPUT);
+    _locklimit->setDirection(INPUT);
+    _unlocklimit->setDirection(INPUT);
+    _act1->setDirection(OUTPUT);
+    _act2->setDirection(OUTPUT);
+    _relay1->setDirection(OUTPUT);
+    _relay2->setDirection(OUTPUT);
 }
 
 void RemoteLock::poll()
 {
     if (_state == R_UNLOCKED && _closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
         Serial.println("// door closed, start locking");
         _lock();
         _state = R_LOCKING;
     }
     if (_state == R_LOCKING && !_closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
         Serial.println("// reopened before fully locked, wind the lock back");
         _state = R_UNLOCKING;
     }
     if (_state == R_LOCKING && _lockedLimitState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
         Serial.println("// fully locked, stop and set us locked");
         _stop();
         _state = R_LOCKED;
     }
-    if (_state == R_UNLOCKING  && _action != A_UNLOCKING)
+    if (_state == R_UNLOCKING && _action != A_UNLOCKING)
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
-        Serial.println("// unlock requested, start unlock (these states prevent the close switch from relocking)");
+        // these states prevent the close switch from relocking
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
+        Serial.println("// unlock requested, start unlock");
         _unlock();
     }
     if (_state == R_UNLOCKING && _unlockedLimitState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
         Serial.println("// It's unlocking. Now... wait for the garage door to be opened.");
         _stop();
         _state = R_READYTOOPEN;
     }
     if (_state == R_READYTOOPEN && !_closeState())
     {
-        Serial.printf("State %d close %d limit %d\n", _state, _closeState(), _lockedLimitState());
-        Serial.println("//....  Then a close will relock");
+        Serial.printf("State %d close %d limit %d ", _state, _closeState(), _lockedLimitState());
+        Serial.println("//It's open.  Then a close will relock");
         _state = R_UNLOCKED;
     }
 };
+
+Pin *RemoteLock::closePin()
+{
+    return _close;
+}
+
+Pin *RemoteLock::lockLimitPin()
+{
+    return _locklimit;
+}
+
+Pin *RemoteLock::unlockLimitPin()
+{
+    return _unlocklimit;
+}
+
+Pin *RemoteLock::relay1Pin()
+{
+    return _relay1;
+}
+
+Pin *RemoteLock::relay2Pin()
+{
+    return _relay2;
+}
+
+Pin *RemoteLock::act1Pin()
+{
+    return _act1;
+}
+
+Pin *RemoteLock::act2Pin()
+{
+    return _act2;
+}
 
 bool RemoteLock::_closeState()
 {
@@ -127,7 +186,8 @@ bool RemoteLock::_unlockedLimitState()
 
 void RemoteLock::_stop()
 {
-    if(_action == A_STOP)return;
+    if (_action == A_STOP)
+        return;
     _action = A_STOP;
     Serial.println("Stopping");
     _act1->write(false);
@@ -140,7 +200,8 @@ void RemoteLock::_stop()
 
 void RemoteLock::_unlock()
 {
-    if(_action == A_UNLOCKING)return;
+    if (_action == A_UNLOCKING)
+        return;
     _action = 2;
     Serial.println("UnLocking");
     _act1->write(false);
@@ -156,7 +217,8 @@ void RemoteLock::_unlock()
 
 void RemoteLock::_lock()
 {
-    if(_action == A_LOCKING)return;
+    if (_action == A_LOCKING)
+        return;
     _action = A_LOCKING;
     Serial.println("Locking");
     _act1->write(false);

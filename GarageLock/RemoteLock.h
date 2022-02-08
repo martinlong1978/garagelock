@@ -23,6 +23,10 @@ class Pin {
         virtual void setDirection(int direction) = 0;
         virtual void write(bool value) = 0;
         virtual bool read() = 0;
+        virtual void toggle() = 0;
+        bool getWrittenState();
+    public :
+        bool _written;
 };
 
 class LocalPin : public Pin {
@@ -31,6 +35,7 @@ class LocalPin : public Pin {
         void setDirection(int direction);
         void write(bool value);
         bool read();
+        void toggle();
     private:
         int _pin;
         bool _flip;
@@ -42,6 +47,7 @@ class SpiPin : public Pin {
         void setDirection(int direction);
         void write(bool value);
         bool read();
+        void toggle();
     private:
         int _pin;
         bool _flip;
@@ -50,11 +56,19 @@ class SpiPin : public Pin {
 
 class RemoteLock {
     public:
-        RemoteLock(Pin *close, Pin *limit, Pin *actuator1, Pin *actuator2, Pin *relay);
+        RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuator1, Pin *actuator2, Pin *relay1, Pin *relay2);
+        void init();
         void poll();
         void unlock();
         void trylock();
         bool isLocked();
+        Pin* closePin();
+        Pin* unlockLimitPin();
+        Pin* lockLimitPin();
+        Pin* relay1Pin();
+        Pin* act1Pin();
+        Pin* relay2Pin();
+        Pin* act2Pin();
     private:
         RemoteLock();
         int _state;
