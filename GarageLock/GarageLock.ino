@@ -331,6 +331,8 @@ void setup()
   spi.begin(11, 12, 13, 16);
   mcp.begin();
 
+  mcp.pinMode(4, OUTPUT);
+
   delay(500);
   setupOTA();
 

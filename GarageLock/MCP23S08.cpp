@@ -130,11 +130,11 @@ bool MCP23S08::pinMode(uint8_t pin, uint8_t mode)
   }
 
   uint8_t dataDirectionRegister = MCP23S08_DDR_A;
-  uint8_t val = readReg(dataDirectionRegister);
-  if (_error != MCP23S08_OK)
-  {
-    return false;
-  }
+  uint8_t val =  _ddr; //readReg(dataDirectionRegister);
+//  if (_error != MCP23S08_OK)
+//  {
+//    return false;
+//  }
   uint8_t mask = 1 << pin;
   // only work with valid
   if ((mode == INPUT) || (mode == INPUT_PULLUP))
@@ -164,7 +164,7 @@ bool MCP23S08::digitalWrite(uint8_t pin, uint8_t value)
     return false;
   }
   uint8_t IOR = MCP23S08_GPIO_A;
-  uint8_t val = readReg(IOR);
+  _ior = readReg(IOR);
   if (_error != MCP23S08_OK)
   {
     return false;
@@ -172,13 +172,13 @@ bool MCP23S08::digitalWrite(uint8_t pin, uint8_t value)
   uint8_t mask = 1 << pin;
   if (value)
   {
-    val |= mask;
+    _ior |= mask;
   }
   else
   {
-    val &= ~mask;
+    _ior &= ~mask;
   }
-  writeReg(IOR, val);
+  writeReg(IOR, _ior);
   if (_error != MCP23S08_OK)
   {
     return false;
@@ -439,9 +439,15 @@ uint8_t MCP23S08::readReg(uint8_t reg)
   if (_hwSPI)
   {
     mySPI->beginTransaction(_spi_settings);
+    mySPI->transfer(MCP23S08_WRITE_REG | (_address << 1));
+    mySPI->transfer(MCP23S08_GPIO_A);
+    mySPI->transfer(_ior | 16);
     mySPI->transfer(MCP23S08_READ_REG | (_address << 1)); // TODO OPTIMIZE n times
     mySPI->transfer(reg);
     rv = mySPI->transfer(0xFF);
+    mySPI->transfer(MCP23S08_WRITE_REG | (_address << 1));
+    mySPI->transfer(MCP23S08_GPIO_A);
+    mySPI->transfer(_ior & 239);
     mySPI->endTransaction();
   }
   else

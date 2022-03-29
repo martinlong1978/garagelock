@@ -72,6 +72,8 @@ private:
   bool     writeReg(uint8_t reg, uint8_t value);
   uint8_t  readReg(uint8_t reg);
 
+  uint8_t  _ddr = 0;
+  uint8_t  _ior = 0;
   uint8_t  _address = 0;
   uint8_t  _select  = 0;
   uint8_t  _dataOut = 0;
