@@ -3,7 +3,7 @@
 
 bool Pin::getWrittenState()
 {
-    return _written;
+    return _written ^ _flip;
 }
 
 LocalPin::LocalPin(int pin, bool flip)
@@ -14,6 +14,7 @@ LocalPin::LocalPin(int pin, bool flip)
 
 void LocalPin::setDirection(int direction)
 {
+    _direction = direction;
     pinMode(_pin, direction);
 };
 
@@ -33,6 +34,10 @@ bool LocalPin::read()
 void LocalPin::toggle()
 {
     _flip = !_flip;
+    if(_direction == OUTPUT)
+    {
+        write(_written);
+    }
 }
 
 SpiPin::SpiPin(MCP23S08 *spi, int pin, bool flip)
@@ -44,6 +49,7 @@ SpiPin::SpiPin(MCP23S08 *spi, int pin, bool flip)
 
 void SpiPin::setDirection(int direction)
 {
+    _direction = direction;
     _spi->pinMode(_pin, direction);
 };
 
@@ -63,6 +69,10 @@ bool SpiPin::read()
 void SpiPin::toggle()
 {
     _flip = !_flip;
+    if(_direction == OUTPUT)
+    {
+        write(_written);
+    }
 }
 
 RemoteLock::RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuator1, Pin *actuator2, Pin *relay1, Pin *relay2)

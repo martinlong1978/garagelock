@@ -26,7 +26,10 @@ class Pin {
         virtual void toggle() = 0;
         bool getWrittenState();
     public :
+        bool _flip;
         bool _written;
+        int _pin;
+        int _direction;
 };
 
 class LocalPin : public Pin {
@@ -37,8 +40,6 @@ class LocalPin : public Pin {
         bool read();
         void toggle();
     private:
-        int _pin;
-        bool _flip;
 };
 
 class SpiPin : public Pin {
@@ -50,7 +51,6 @@ class SpiPin : public Pin {
         void toggle();
     private:
         int _pin;
-        bool _flip;
         MCP23S08 *_spi;
 };
 

@@ -21,7 +21,7 @@ QueueHandle_t outQueue;
 QueueHandle_t cmdQueue;
 
 SPIClass spi(HSPI);
-MCP23S08 mcp(&spi, 16, 0);
+MCP23S08 mcp(&spi, 11, 0);
 
 RemoteLock locks[NO_LOCKS] = {
     RemoteLock(new SpiPin(&mcp, 5, false),
@@ -49,7 +49,7 @@ void console(void *parameters)
 {
   for (;;)
   {
-    Serial.print("Toggle: (c) close switch (l)ock limit switch (u)nlock limit switch. MQTT unlock (m).\n");
+    Serial.print("Toggle: \n (c) close switch \n (l)ock limit switch\n (u)nlock limit switch\n (r)ead pins\n (M)QTT unlock (m).\n");
     char a[5];
     while (Serial.read(&a[0], 5) <= 0)
     {
@@ -101,6 +101,7 @@ void remote_loop(void *parameters)
 {
   // RemoteLock locks[NO_LOCKS] = {
   //     RemoteLock(new LocalPin(13, true), new LocalPin(16, true), new LocalPin(11, false), new LocalPin(12, false))};
+
 
   for (int i = 0; i < NO_LOCKS; i++)
   {
@@ -182,6 +183,20 @@ void checkDebugQueue()
         locks[i].unlock();
       }
       break;
+    case '1':
+      locks[debuglock].relay1Pin()->toggle();
+      break;
+    case '2':
+      locks[debuglock].relay2Pin()->toggle();
+      break;
+    case '3':
+      locks[debuglock].act1Pin()->toggle();
+      break;
+    case '4':
+      locks[debuglock].act2Pin()->toggle();
+      break;
+    case 'r':
+      break;
     default:
       break;
     }
@@ -190,13 +205,13 @@ void checkDebugQueue()
       // Serial.println("Polling");
       locks[i].poll();
     }
-    Serial.printf("Close Pin: %i\n", locks[debuglock].closePin()->read());
-    Serial.printf("LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
-    Serial.printf("UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
-    Serial.printf("Relay1 Pin: %i\n", locks[debuglock].relay1Pin()->getWrittenState());
-    Serial.printf("Relay2 Pin: %i\n", locks[debuglock].relay2Pin()->getWrittenState());
-    Serial.printf("Act1 Pin: %i\n", locks[debuglock].act1Pin()->getWrittenState());
-    Serial.printf("Act2 Pin: %i\n", locks[debuglock].act2Pin()->getWrittenState());
+    Serial.printf("c - Close Pin: %i\n", locks[debuglock].closePin()->read());
+    Serial.printf("l - LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
+    Serial.printf("u - UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
+    Serial.printf("1 - Relay1 Pin: %i\n", locks[debuglock].relay1Pin()->getWrittenState());
+    Serial.printf("2 - Relay2 Pin: %i\n", locks[debuglock].relay2Pin()->getWrittenState());
+    Serial.printf("3 - Act1 Pin: %i\n", locks[debuglock].act1Pin()->getWrittenState());
+    Serial.printf("4 - Act2 Pin: %i\n", locks[debuglock].act2Pin()->getWrittenState());
   }
 }
 
@@ -328,7 +343,9 @@ void setup()
   wifiConnect();
   mqttConnect();
 
-  spi.begin(11, 12, 13, 16);
+  spi.begin(16, 18, 17, 11);
+
+  //spi.begin(12, 16, 13, 11);
   mcp.begin();
 
   delay(500);
