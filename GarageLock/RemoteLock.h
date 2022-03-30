@@ -26,7 +26,7 @@ class Pin {
         virtual void toggle() = 0;
         bool getWrittenState();
     public :
-        bool _flip;
+        bool _flip = false;
         bool _written;
         int _pin;
         int _direction;

@@ -13,6 +13,8 @@
 #define SUBJECT "garagelock/feeds/onoff"
 #define STATUSSUBJECT "garagelock/feeds/onoff/state"
 
+//#define CONFIGMODE
+
 WiFiClient client;
 PubSubClient mqttClient(MQTT_HOST, 1883, client);
 
@@ -20,17 +22,26 @@ QueueHandle_t inQueue;
 QueueHandle_t outQueue;
 QueueHandle_t cmdQueue;
 
-SPIClass spi(HSPI);
-MCP23S08 mcp(&spi, 11, 0);
+// SPIClass spi(HSPI);
+// MCP23S08 mcp(&spi, 11, 0);
+
+// RemoteLock locks[NO_LOCKS] = {
+//     RemoteLock(new SpiPin(&mcp, 5, false),
+//                new SpiPin(&mcp, 6, false),
+//                new SpiPin(&mcp, 7, false),
+//                new SpiPin(&mcp, 3, false),
+//                new SpiPin(&mcp, 2, false),
+//                new SpiPin(&mcp, 0, false),
+//                new SpiPin(&mcp, 1, false))};
 
 RemoteLock locks[NO_LOCKS] = {
-    RemoteLock(new SpiPin(&mcp, 5, false),
-               new SpiPin(&mcp, 6, false),
-               new SpiPin(&mcp, 7, false),
-               new SpiPin(&mcp, 3, false),
-               new SpiPin(&mcp, 2, false),
-               new SpiPin(&mcp, 0, false),
-               new SpiPin(&mcp, 1, false))};
+    RemoteLock(new LocalPin(26, false),
+               new LocalPin(27, false),
+               new LocalPin(32, false),
+               new LocalPin(22, false),
+               new LocalPin(23, false),
+               new LocalPin(19, false),
+               new LocalPin(21, false))};
 
 // OTA Update task
 
@@ -102,7 +113,6 @@ void remote_loop(void *parameters)
   // RemoteLock locks[NO_LOCKS] = {
   //     RemoteLock(new LocalPin(13, true), new LocalPin(16, true), new LocalPin(11, false), new LocalPin(12, false))};
 
-
   for (int i = 0; i < NO_LOCKS; i++)
   {
     // Serial.println("Polling");
@@ -115,7 +125,9 @@ void remote_loop(void *parameters)
     for (int i = 0; i < NO_LOCKS; i++)
     {
       // Serial.println("Polling");
+#ifndef CONFIGMODE
       locks[i].poll();
+#endif
     }
     // Serial.println("Checking msg Queue");
     if (uxQueueMessagesWaiting(inQueue) > 0)
@@ -128,12 +140,16 @@ void remote_loop(void *parameters)
       if (msg.equals("OFF"))
         for (int i = 0; i < NO_LOCKS; i++)
         {
+#ifndef CONFIGMODE
           locks[i].unlock();
+#endif
         }
       if (msg.equals("ON"))
         for (int i = 0; i < NO_LOCKS; i++)
         {
+#ifndef CONFIGMODE
           locks[i].trylock();
+#endif
         }
     }
     bool locked = true;
@@ -203,15 +219,15 @@ void checkDebugQueue()
     for (int i = 0; i < NO_LOCKS; i++)
     {
       // Serial.println("Polling");
-      locks[i].poll();
+      //locks[i].poll();
     }
     Serial.printf("c - Close Pin: %i\n", locks[debuglock].closePin()->read());
     Serial.printf("l - LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
     Serial.printf("u - UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
-    Serial.printf("1 - Relay1 Pin: %i\n", locks[debuglock].relay1Pin()->getWrittenState());
-    Serial.printf("2 - Relay2 Pin: %i\n", locks[debuglock].relay2Pin()->getWrittenState());
-    Serial.printf("3 - Act1 Pin: %i\n", locks[debuglock].act1Pin()->getWrittenState());
-    Serial.printf("4 - Act2 Pin: %i\n", locks[debuglock].act2Pin()->getWrittenState());
+    Serial.printf("1 - Relay1 Pin: %i f %i\n", locks[debuglock].relay1Pin()->getWrittenState(), locks[debuglock].relay1Pin()->_flip);
+    Serial.printf("2 - Relay2 Pin: %i f %i\n", locks[debuglock].relay2Pin()->getWrittenState(), locks[debuglock].relay2Pin()->_flip);
+    Serial.printf("3 - Act1 Pin: %i f %i\n", locks[debuglock].act1Pin()->getWrittenState(), locks[debuglock].act1Pin()->_flip);
+    Serial.printf("4 - Act2 Pin: %i f %i\n", locks[debuglock].act2Pin()->getWrittenState(), locks[debuglock].act2Pin()->_flip);
   }
 }
 
@@ -343,10 +359,10 @@ void setup()
   wifiConnect();
   mqttConnect();
 
-  spi.begin(16, 18, 17, 11);
+  // spi.begin(16, 18, 17, 11);
 
-  //spi.begin(12, 16, 13, 11);
-  mcp.begin();
+  // spi.begin(12, 16, 13, 11);
+  // mcp.begin();
 
   delay(500);
   setupOTA();

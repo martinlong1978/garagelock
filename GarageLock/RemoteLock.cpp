@@ -10,6 +10,7 @@ LocalPin::LocalPin(int pin, bool flip)
 {
     _pin = pin;
     _flip = flip;
+    write(false);
 }
 
 void LocalPin::setDirection(int direction)
