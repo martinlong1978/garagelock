@@ -355,7 +355,7 @@ void wifi_loop(void *parameters)
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(300000);
   delay(10);
 
   inQueue = xQueueCreate(10, sizeof(char) * 5);
