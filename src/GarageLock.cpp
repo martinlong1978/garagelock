@@ -110,6 +110,63 @@ void setupOTA()
 
 // Button / Relay controller task
 
+void checkDebugQueue()
+{
+  int debuglock = 0;
+
+  if (uxQueueMessagesWaiting(cmdQueue) > 0)
+  {
+    char msgc[5];
+    xQueueReceive(cmdQueue, &msgc, portMAX_DELAY);
+    switch (msgc[0])
+    {
+    case 'c':
+      locks[debuglock].closePin()->toggle();
+      break;
+    case 'l':
+      locks[debuglock].lockLimitPin()->toggle();
+      break;
+    case 'u':
+      locks[debuglock].unlockLimitPin()->toggle();
+      break;
+    case 'm':
+      for (int i = 0; i < NO_LOCKS; i++)
+      {
+        locks[i].unlock();
+      }
+      break;
+    case '1':
+      locks[debuglock].relay1Pin()->toggle();
+      break;
+    case '2':
+      locks[debuglock].relay2Pin()->toggle();
+      break;
+    case '3':
+      locks[debuglock].act1Pin()->toggle();
+      break;
+    case '4':
+      locks[debuglock].act2Pin()->toggle();
+      break;
+    case 'r':
+      break;
+    default:
+      break;
+    }
+    for (int i = 0; i < NO_LOCKS; i++)
+    {
+      // Serial.println("Polling");
+      // locks[i].poll();
+    }
+    Serial.printf("c - Close Pin: %i\n", locks[debuglock].closePin()->read());
+    Serial.printf("l - LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
+    Serial.printf("u - UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
+    Serial.printf("1 - Relay1 Pin: %i f %i\n", locks[debuglock].relay1Pin()->getWrittenState(), locks[debuglock].relay1Pin()->_flip);
+    Serial.printf("2 - Relay2 Pin: %i f %i\n", locks[debuglock].relay2Pin()->getWrittenState(), locks[debuglock].relay2Pin()->_flip);
+    Serial.printf("3 - Act1 Pin: %i f %i\n", locks[debuglock].act1Pin()->getWrittenState(), locks[debuglock].act1Pin()->_flip);
+    Serial.printf("4 - Act2 Pin: %i f %i\n", locks[debuglock].act2Pin()->getWrittenState(), locks[debuglock].act2Pin()->_flip);
+  }
+}
+
 void remote_loop(void *parameters)
 {
   // RemoteLock locks[NO_LOCKS] = {
@@ -176,64 +233,34 @@ void remote_loop(void *parameters)
   }
 }
 
-void checkDebugQueue()
-{
-  int debuglock = 0;
-
-  if (uxQueueMessagesWaiting(cmdQueue) > 0)
-  {
-    char msgc[5];
-    xQueueReceive(cmdQueue, &msgc, portMAX_DELAY);
-    switch (msgc[0])
-    {
-    case 'c':
-      locks[debuglock].closePin()->toggle();
-      break;
-    case 'l':
-      locks[debuglock].lockLimitPin()->toggle();
-      break;
-    case 'u':
-      locks[debuglock].unlockLimitPin()->toggle();
-      break;
-    case 'm':
-      for (int i = 0; i < NO_LOCKS; i++)
-      {
-        locks[i].unlock();
-      }
-      break;
-    case '1':
-      locks[debuglock].relay1Pin()->toggle();
-      break;
-    case '2':
-      locks[debuglock].relay2Pin()->toggle();
-      break;
-    case '3':
-      locks[debuglock].act1Pin()->toggle();
-      break;
-    case '4':
-      locks[debuglock].act2Pin()->toggle();
-      break;
-    case 'r':
-      break;
-    default:
-      break;
-    }
-    for (int i = 0; i < NO_LOCKS; i++)
-    {
-      // Serial.println("Polling");
-      // locks[i].poll();
-    }
-    Serial.printf("c - Close Pin: %i\n", locks[debuglock].closePin()->read());
-    Serial.printf("l - LockLimit Pin: %i\n", locks[debuglock].lockLimitPin()->read());
-    Serial.printf("u - UnlockLimit Pin: %i\n", locks[debuglock].unlockLimitPin()->read());
-    Serial.printf("1 - Relay1 Pin: %i f %i\n", locks[debuglock].relay1Pin()->getWrittenState(), locks[debuglock].relay1Pin()->_flip);
-    Serial.printf("2 - Relay2 Pin: %i f %i\n", locks[debuglock].relay2Pin()->getWrittenState(), locks[debuglock].relay2Pin()->_flip);
-    Serial.printf("3 - Act1 Pin: %i f %i\n", locks[debuglock].act1Pin()->getWrittenState(), locks[debuglock].act1Pin()->_flip);
-    Serial.printf("4 - Act2 Pin: %i f %i\n", locks[debuglock].act2Pin()->getWrittenState(), locks[debuglock].act2Pin()->_flip);
-  }
-}
-
 // MQTT Task
+
+void onMqttMessage(const char topic[], byte *payload, unsigned int messageSize)
+{
+  // we received a message, print out the topic and contents
+  Serial.print("Received a message with topic '");
+  Serial.print(topic);
+  Serial.print("', length ");
+  Serial.print(messageSize);
+  Serial.print(" bytes:\n");
+  if (messageSize)
+  {
+    String msg;
+    for (int i = 0; i < messageSize; i++)
+    {
+      msg += (char)payload[i];
+    }
+    //String msg(reinterpret_cast<const char *>(payload), messageSize);
+    Serial.printf("Message: %s\n", msg);
+    if (msg.equals("OFF") || msg.equals("ON"))
+    {
+      Serial.println("Placing message on inQueue");
+      xQueueSend(inQueue, &msg, portMAX_DELAY);
+      Serial.println("Placed message on inQueue");
+    }
+  }
+  Serial.println("Done processing message with topic ");
+}
 
 void mqttConnect()
 {
@@ -270,28 +297,6 @@ void mqttReconnect()
   {
     mqttConnect();
   }
-}
-
-void onMqttMessage(const char topic[], byte *payload, unsigned int messageSize)
-{
-  // we received a message, print out the topic and contents
-  Serial.print("Received a message with topic '");
-  Serial.print(topic);
-  Serial.print("', length ");
-  Serial.print(messageSize);
-  Serial.print(" bytes:\n");
-  if (messageSize)
-  {
-    String msg(reinterpret_cast<const char *>(payload), messageSize);
-    Serial.printf("Message: %s\n", msg);
-    if (msg.equals("OFF") || msg.equals("ON"))
-    {
-      Serial.println("Placing message on inQueue");
-      xQueueSend(inQueue, &msg, portMAX_DELAY);
-      Serial.println("Placed message on inQueue");
-    }
-  }
-  Serial.println("Done processing message with topic ");
 }
 
 void mqtt_loop(void *parameters)
