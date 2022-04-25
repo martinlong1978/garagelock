@@ -3,17 +3,35 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <SPI.h>
-#include <ArduinoOTA.h>
+#include <string>
+//#include <ArduinoOTA.h>
 #include "RemoteLock.h"
 #include <PubSubClient.h>
 #include "MCP23S08.h"
 #include "SECRETS.h"
-#include <Update.h>
+//#include <Update.h>
+//#include <HTTPUpdate.h>
+//#include <ESP32httpUpdate.h>
+#include <FS.h>
+#include <SPIFFS.h>
+#include <HTTPClient.h>
+#include <HttpsOTAUpdate.h>
+
+using namespace std;
+
+static const char *server_certificate = "";
 
 #define NO_LOCKS 1
-#define SUBJECT "garagelock/feeds/onoff"
-#define STATUSSUBJECT "garagelock/feeds/onoff/state"
-#define UPDATESUBJECT "garagelock/feeds/updates"
+
+string base = "garagelock";
+string controlsubject = base + "/onoff";
+string statussubject = controlsubject + "/state";
+string updatesubject = base + "/updates";
+string commandsubject = base + "/command";
+string configsubject = base + "/config";
+
+string host;
+string myStatus;
 
 //#define CONFIGMODE
 
@@ -36,25 +54,36 @@ QueueHandle_t cmdQueue;
 //                new SpiPin(&mcp, 0, false),
 //                new SpiPin(&mcp, 1, false))};
 
-RemoteLock locks[NO_LOCKS] = {
-    RemoteLock(new LocalPin(26, false),
-               new LocalPin(27, false),
-               new LocalPin(32, false),
-               new LocalPin(22, false),
-               new LocalPin(23, false),
-               new LocalPin(19, false),
-               new LocalPin(21, false))};
+RemoteLock locks[NO_LOCKS];
 
 // OTA Update task
 
-void updater(void *parameters)
+// void updater(void *parameters)
+// {
+//   for (;;)
+//   {
+//     vTaskDelay(1000 / portTICK_PERIOD_MS);
+//     ArduinoOTA.handle();
+//   }
+// }
+
+struct flipConfig
 {
-  for (;;)
-  {
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    ArduinoOTA.handle();
-  }
-}
+  bool closePin;
+  bool lockLimitPin;
+  bool unlockLimitPin;
+};
+
+void GetLockConfig()
+{
+  RemoteLock rl(new LocalPin(26, false),
+                new LocalPin(27, false),
+                new LocalPin(32, false),
+                new LocalPin(22, false),
+                new LocalPin(23, false),
+                new LocalPin(19, false),
+                new LocalPin(21, false));
+};
 
 // Console task
 
@@ -71,43 +100,6 @@ void console(void *parameters)
     xQueueSend(cmdQueue, &a, portMAX_DELAY);
   }
 }
-
-void setupOTA()
-{
-  // Port defaults to 3232
-  ArduinoOTA.setPort(3232);
-
-  // Hostname defaults to esp3232-[MAC]
-  // ArduinoOTA.setHostname("garagedoor");
-
-  Serial.println("Configuring OTA");
-  ArduinoOTA
-      .onStart([]()
-               {
-            String type;
-            if (ArduinoOTA.getCommand() == U_FLASH)
-              type = "sketch";
-            else // U_SPIFFS
-              type = "filesystem";
-
-            // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-            Serial.println("Start updating " + type); })
-      .onEnd([]()
-             { Serial.println("\nEnd"); })
-      .onProgress([](unsigned int progress, unsigned int total)
-                  { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
-      .onError([](ota_error_t error)
-               {
-                  Serial.printf("Error[%u]: ", error);
-                  if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-                  else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-                  else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-                  else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-                  else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
-
-  ArduinoOTA.begin();
-}
-
 // Button / Relay controller task
 
 void checkDebugQueue()
@@ -193,17 +185,17 @@ void remote_loop(void *parameters)
     {
       char msgc[10];
       xQueueReceive(inQueue, &msgc, portMAX_DELAY);
-      String msg(msgc);
+      string msg(msgc);
       Serial.printf("Has messages %s\n", msg);
       xQueueReset(inQueue);
-      if (msg.equals("OFF"))
+      if (msg == "OFF")
         for (int i = 0; i < NO_LOCKS; i++)
         {
 #ifndef CONFIGMODE
           locks[i].unlock();
 #endif
         }
-      if (msg.equals("ON"))
+      if (msg == "ON")
         for (int i = 0; i < NO_LOCKS; i++)
         {
 #ifndef CONFIGMODE
@@ -230,8 +222,47 @@ void remote_loop(void *parameters)
     }
 
     checkDebugQueue();
+    HttpsOTAStatus_t otastatus = HttpsOTA.status();
+    if (otastatus == HTTPS_OTA_SUCCESS)
+    {
+      Serial.println("Firmware written successfully. To reboot device, call API ESP.restart() or PUSH restart button on device");
+      ESP.restart();
+    }
+    else if (otastatus == HTTPS_OTA_FAIL)
+    {
+      Serial.println("Firmware Upgrade Fail");
+    }
   }
 }
+
+void HttpEvent(HttpEvent_t *event)
+{
+  switch (event->event_id)
+  {
+  case HTTP_EVENT_ERROR:
+    Serial.println("Http Event Error");
+    break;
+  case HTTP_EVENT_ON_CONNECTED:
+    Serial.println("Http Event On Connected");
+    break;
+  case HTTP_EVENT_HEADER_SENT:
+    Serial.println("Http Event Header Sent");
+    break;
+  case HTTP_EVENT_ON_HEADER:
+    Serial.printf("Http Event On Header, key=%s, value=%s\n", event->header_key, event->header_value);
+    break;
+  case HTTP_EVENT_ON_DATA:
+    break;
+  case HTTP_EVENT_ON_FINISH:
+    Serial.println("Http Event On Finish");
+    break;
+  case HTTP_EVENT_DISCONNECTED:
+    Serial.println("Http Event Disconnected");
+    break;
+  }
+}
+
+bool updating = false;
 
 // MQTT Task
 
@@ -245,14 +276,29 @@ void onMqttMessage(const char topic[], byte *payload, unsigned int messageSize)
   Serial.print(" bytes:\n");
   if (messageSize)
   {
-    String msg;
+    string msg;
     for (int i = 0; i < messageSize; i++)
     {
       msg += (char)payload[i];
     }
-    //String msg(reinterpret_cast<const char *>(payload), messageSize);
+    if (updatesubject == topic)
+    {
+      if (!updating)
+      {
+        disableCore0WDT();
+        disableCore1WDT();
+        disableLoopWDT();
+        updating = true;
+        Serial.println("Updating......");
+        Serial.println(msg.c_str());
+        HttpsOTA.onHttpEvent(HttpEvent);
+        HttpsOTA.begin(msg.c_str(), server_certificate);
+        return;
+      }
+    }
+    // string msg(reinterpret_cast<const char *>(payload), messageSize);
     Serial.printf("Message: %s\n", msg);
-    if (msg.equals("OFF") || msg.equals("ON"))
+    if (msg == "OFF" || msg == "ON")
     {
       Serial.println("Placing message on inQueue");
       xQueueSend(inQueue, &msg, portMAX_DELAY);
@@ -274,7 +320,8 @@ void mqttConnect()
       vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    if (!mqttClient.connect("GarageLock"))
+    // if (!mqttClient.connect(&id[0]))
+    if (!mqttClient.connect(host.c_str()))
     {
       Serial.print("MQTT: Could not connect \n");
     }
@@ -283,7 +330,9 @@ void mqttConnect()
       // Use WiFiClient class to create TCP connections
       Serial.print("MQTT: Connected to HASS\n");
       mqttClient.setCallback(onMqttMessage);
-      mqttClient.subscribe(SUBJECT);
+      mqttClient.subscribe(controlsubject.c_str());
+      mqttClient.subscribe(myStatus.c_str());
+      mqttClient.subscribe((updatesubject + host).c_str());
       vTaskDelay(1000 / portTICK_PERIOD_MS);
       return;
     }
@@ -312,8 +361,8 @@ void mqtt_loop(void *parameters)
       char msgc[10];
       xQueueReceive(outQueue, &msgc, portMAX_DELAY);
       xQueueReset(outQueue);
-      String msg(msgc);
-      mqttClient.publish(STATUSSUBJECT, msgc);
+      string msg(msgc);
+      mqttClient.publish(statussubject.c_str(), msgc);
     }
   }
 }
@@ -351,12 +400,33 @@ void wifi_loop(void *parameters)
   }
 }
 
-// Entry points
+void init()
+{
+  xTaskCreate(
+      remote_loop,
+      "Remote",
+      2000,
+      NULL,
+      1,
+      NULL);
+}
 
+void sendStatus()
+{
+  char buffer[11];
+
+  string topic = "garagelock/" + host;
+  sprintf(buffer, "c %d l %d u %d", locks[0].closePin()->read(), locks[0].lockLimitPin()->read(), locks[0].unlockLimitPin()->read());
+  mqttClient.publish(topic.c_str(), buffer);
+}
+
+// Entry points
 void setup()
 {
   Serial.begin(300000);
   delay(10);
+
+  host = base + WiFi.macAddress().c_str();
 
   inQueue = xQueueCreate(10, sizeof(char) * 5);
   outQueue = xQueueCreate(10, sizeof(char) * 5);
@@ -372,7 +442,7 @@ void setup()
   // mcp.begin();
 
   delay(500);
-  setupOTA();
+  // setupOTA();
 
   xTaskCreate(
       mqtt_loop,
@@ -385,22 +455,6 @@ void setup()
   xTaskCreate(
       wifi_loop,
       "Wifi",
-      2000,
-      NULL,
-      1,
-      NULL);
-
-  xTaskCreate(
-      remote_loop,
-      "Remote",
-      2000,
-      NULL,
-      1,
-      NULL);
-
-  xTaskCreate(
-      updater,
-      "Updater",
       2000,
       NULL,
       1,
