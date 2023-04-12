@@ -25,16 +25,19 @@ class Pin {
         virtual bool read() = 0;
         virtual void toggle() = 0;
         bool getWrittenState();
-    public :
+        virtual ~Pin() = 0;
         bool _flip = false;
+        void freeze();
+        uint8_t _pin;
+    protected :
         bool _written;
-        int _pin;
         int _direction;
 };
 
 class LocalPin : public Pin {
     public:
         LocalPin(int pin, bool flip);
+        virtual ~LocalPin();
         void setDirection(int direction);
         void write(bool value);
         bool read();
@@ -45,6 +48,7 @@ class LocalPin : public Pin {
 class SpiPin : public Pin {
     public:
         SpiPin(MCP23S08 *spi, int pin, bool flip);
+        virtual ~SpiPin();
         void setDirection(int direction);
         void write(bool value);
         bool read();
@@ -57,6 +61,7 @@ class SpiPin : public Pin {
 class RemoteLock {
     public:
         RemoteLock(Pin *close, Pin *locklimit, Pin *unlocklimit, Pin *actuator1, Pin *actuator2, Pin *relay1, Pin *relay2);
+        ~RemoteLock();
         void init();
         void poll();
         void unlock();
@@ -69,6 +74,7 @@ class RemoteLock {
         Pin* act1Pin();
         Pin* relay2Pin();
         Pin* act2Pin();
+        bool autoConfig();
     private:
         RemoteLock();
         int _state;
@@ -80,5 +86,6 @@ class RemoteLock {
         bool _unlockedLimitState();
         bool _closeState();
         int _action;
+        Pin * _waitForPinChange();
 };
 #endif

@@ -103,7 +103,6 @@
                 "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
                 "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                 "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
-                "C:/Users/marti/.platformio/packages/tool-unity",
                 ""
             ],
             "browse": {
@@ -204,12 +203,11 @@
                     "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
                     "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                     "C:/Users/marti/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
-                    "C:/Users/marti/.platformio/packages/tool-unity",
                     ""
                 ]
             },
             "defines": [
-                "PLATFORMIO=50205",
+                "PLATFORMIO=60104",
                 "ARDUINO_ESP32_DEV",
                 "ESP32",
                 "ESP_PLATFORM",

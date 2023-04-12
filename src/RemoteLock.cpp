@@ -1,9 +1,23 @@
 #include <Arduino.h>
 #include "RemoteLock.h"
 
+extern QueueHandle_t configSemaphore;
+
+Pin::~Pin() {}
+LocalPin::~LocalPin() {}
+SpiPin::~SpiPin() {}
+
 bool Pin::getWrittenState()
 {
     return _written ^ _flip;
+}
+
+void Pin::freeze()
+{
+    if (read())
+    {
+        _flip = !_flip;
+    }
 }
 
 LocalPin::LocalPin(int pin, bool flip)
@@ -35,7 +49,7 @@ bool LocalPin::read()
 void LocalPin::toggle()
 {
     _flip = !_flip;
-    if(_direction == OUTPUT)
+    if (_direction == OUTPUT)
     {
         write(_written);
     }
@@ -70,7 +84,7 @@ bool SpiPin::read()
 void SpiPin::toggle()
 {
     _flip = !_flip;
-    if(_direction == OUTPUT)
+    if (_direction == OUTPUT)
     {
         write(_written);
     }
@@ -260,4 +274,72 @@ void RemoteLock::trylock()
 bool RemoteLock::isLocked()
 {
     return _state == R_LOCKED;
+}
+
+Pin *RemoteLock::_waitForPinChange()
+{
+    Pin *p[] = {_close, _unlocklimit, _locklimit};
+    bool value[] = {_close->read(), _unlocklimit->read(), _locklimit->read()};
+    while (uxSemaphoreGetCount(configSemaphore) == 0)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (p[i]->read() != value[i])
+            {
+                return p[i];
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+    }
+    return NULL;
+}
+
+bool RemoteLock::autoConfig()
+{
+    Serial.println("Autoconfig. Waiting for pin change");
+    Pin *closePin = _waitForPinChange();
+    if (closePin == NULL)
+        return false;
+    _unlock();
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    _stop();
+    _lock();
+    Pin *unlockLimit = _waitForPinChange();
+    if (unlockLimit == NULL)
+    {
+        _stop();
+        return false;
+    }
+    Pin *lockLimit = _waitForPinChange();
+    if (lockLimit == NULL)
+    {
+        _stop();
+        return false;
+    }
+    _stop();
+    _unlock();
+    if (_waitForPinChange() == NULL)
+    {
+        _stop();
+        return false;
+    }
+    _stop();
+    unlockLimit->freeze();
+    lockLimit->freeze();
+    closePin->freeze();
+    _unlocklimit = unlockLimit;
+    _locklimit = lockLimit;
+    _close = closePin;
+    return true;
+}
+
+RemoteLock::~RemoteLock()
+{
+    delete _act1;
+    delete _act2;
+    delete _relay1;
+    delete _relay2;
+    delete _close;
+    delete _locklimit;
+    delete _unlocklimit;
 }
